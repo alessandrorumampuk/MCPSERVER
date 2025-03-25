@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Server with Llama3</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e9e9eb">
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+</head>
+<body>
+    <div class="app-container">
+        <div class="saved-chats">
+            <div class="saved-chats-header">
+                <h2>Saved Chats</h2>
+                <button id="clear-saved" title="Clear all saved chats">Clear</button>
+            </div>
+            <div class="saved-chats-list" id="saved-chats-list">
+                <!-- Saved chats will be added here dynamically -->
+                <div class="empty-state">No saved chats yet</div>
+            </div>
+        </div>
+        
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>Chatbot</h1>
+                <button id="save-chat" title="Save current exchange">Save</button>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+            </div>
+            <!-- Add this right after the send button in the chat-input div (around line 35) -->
+            <div class="chat-input">
+                <textarea id="user-input" placeholder="Type your message here..." rows="3"></textarea>
+                <button id="send-button">Send</button>
+                <button id="youtube-search-button" title="Search YouTube">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path>
+                        <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Add this script before the closing body tag -->
+            <script>
+              // YouTube search functionality
+              document.addEventListener('DOMContentLoaded', () => {
+                const youtubeSearchButton = document.getElementById('youtube-search-button');
+                const youtubeSearchModal = document.getElementById('youtube-search-modal');
+                const closeYoutubeModal = document.querySelector('.close-youtube-modal');
+                const youtubeSearchInput = document.getElementById('youtube-search-input');
+                const youtubeSearchSubmit = document.getElementById('youtube-search-submit');
+                const youtubeSearchResults = document.getElementById('youtube-search-results');
+                
+                // Open search modal
+                youtubeSearchButton.addEventListener('click', () => {
+                  youtubeSearchModal.style.display = 'flex';
+                  youtubeSearchInput.focus();
+                });
+                
+                // Close search modal
+                closeYoutubeModal.addEventListener('click', () => {
+                  youtubeSearchModal.style.display = 'none';
+                });
+                
+                // Close modal when clicking outside the content
+                youtubeSearchModal.addEventListener('click', (e) => {
+                  if (e.target === youtubeSearchModal) {
+                    youtubeSearchModal.style.display = 'none';
+                  }
+                });
+                
+                // Handle search submission
+                youtubeSearchSubmit.addEventListener('click', () => {
+                  searchYouTube();
+                });
+                
+                // Handle enter key in search input
+                youtubeSearchInput.addEventListener('keypress', (e) => {
+                  if (e.key === 'Enter') {
+                    searchYouTube();
+                  }
+                });
+                
+                // Function to search YouTube
+                async function searchYouTube() {
+                  const query = youtubeSearchInput.value.trim();
+                  if (!query) return;
+                  
+                  // Show loading indicator
+                  youtubeSearchResults.innerHTML = '<div class="youtube-loading">Searching...</div>';
+                  
+                  try {
+                    const response = await fetch(`/api/youtube/search?query=${encodeURIComponent(query)}`);
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                      youtubeSearchResults.innerHTML = `<div class="youtube-error">Error: ${data.error}</div>`;
+                      return;
+                    }
+                    
+                    if (data.videos.length === 0) {
+                      youtubeSearchResults.innerHTML = '<div class="youtube-no-results">No videos found</div>';
+                      return;
+                    }
+                    
+                    // Display results
+                    youtubeSearchResults.innerHTML = '';
+                    data.videos.forEach(video => {
+                      const videoElement = document.createElement('div');
+                      videoElement.className = 'youtube-video-item';
+                      videoElement.innerHTML = `
+                        <div class="youtube-video-thumbnail">
+                          <img src="${video.thumbnail}" alt="${video.title}">
+                        </div>
+                        <div class="youtube-video-info">
+                          <h4>${video.title}</h4>
+                          <p>${video.channelTitle}</p>
+                          <p class="youtube-video-description">${video.description}</p>
+                        </div>
+                        <div class="youtube-video-actions">
+                          <button class="youtube-share-button" data-id="${video.id}" data-title="${video.title.replace(/"/g, '&quot;')}">Mention</button>
+                          <a href="https://www.youtube.com/watch?v=${video.id}" target="_blank" class="youtube-watch-button">Play</a>
+                        </div>
+                      `;
+                      youtubeSearchResults.appendChild(videoElement);
+                    });
+                    
+                    // Add event listeners to share buttons
+                    document.querySelectorAll('.youtube-share-button').forEach(button => {
+                      button.addEventListener('click', (e) => {
+                        const videoId = e.target.getAttribute('data-id');
+                        const videoTitle = e.target.getAttribute('data-title');
+                        shareVideoInChat(videoId, videoTitle);
+                      });
+                    });
+                    
+                  } catch (error) {
+                    console.error('Error searching YouTube:', error);
+                    youtubeSearchResults.innerHTML = '<div class="youtube-error">Error searching YouTube. Please try again later.</div>';
+                  }
+                }
+                
+                // Function to share a video in the chat
+                function shareVideoInChat(videoId, videoTitle) {
+                  // Create a message with the video embed
+                  const videoMessage = `I found this YouTube video: "${videoTitle}"\nhttps://www.youtube.com/watch?v=${videoId}`;
+                  
+                  // Add to user input
+                  const userInput = document.getElementById('user-input');
+                  userInput.value = videoMessage;
+                  
+                  // Close the modal
+                  youtubeSearchModal.style.display = 'none';
+                  
+                  // Focus on the input
+                  userInput.focus();
+                }
+              });
+            </script>
+            <!-- Add this YouTube search modal before the closing body tag -->
+            <div class="youtube-search-modal" id="youtube-search-modal" style="display: none;">
+                <div class="youtube-search-content">
+                    <div class="youtube-search-header">
+                        <h3>Search YouTube Videos</h3>
+                        <button class="close-youtube-modal">&times;</button>
+                    </div>
+                    <div class="youtube-search-form">
+                        <input type="text" id="youtube-search-input" placeholder="Search for videos...">
+                        <button id="youtube-search-submit">Search</button>
+                    </div>
+                    <div class="youtube-search-results" id="youtube-search-results">
+                        <!-- Results will be added here dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+    <script>
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('ServiceWorker registration failed: ', error);
+                    });
+            });
+        }
+        
+        // PWA install prompt
+        let deferredPrompt;
+        const installPromptContainer = document.createElement('div');
+        installPromptContainer.className = 'install-prompt';
+        installPromptContainer.style.display = 'none';
+        installPromptContainer.innerHTML = `
+            <p>Install this app on your device</p>
+            <button id="install-button">Install</button>
+            <button class="close" id="close-prompt">Not now</button>
+        `;
+        document.body.appendChild(installPromptContainer);
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent Chrome 67 and earlier from automatically showing the prompt
+            e.preventDefault();
+            // Stash the event so it can be triggered later
+            deferredPrompt = e;
+            // Show the install prompt
+            installPromptContainer.style.display = 'flex';
+        });
+        
+        document.getElementById('install-button').addEventListener('click', () => {
+            // Hide the app provided install promotion
+            installPromptContainer.style.display = 'none';
+            // Show the install prompt
+            deferredPrompt.prompt();
+            // Wait for the user to respond to the prompt
+            deferredPrompt.userChoice.then((choiceResult) => {
+                if (choiceResult.outcome === 'accepted') {
+                    console.log('User accepted the install prompt');
+                } else {
+                    console.log('User dismissed the install prompt');
+                }
+                deferredPrompt = null;
+            });
+        });
+        
+        document.getElementById('close-prompt').addEventListener('click', () => {
+            installPromptContainer.style.display = 'none';
+        });
+        
+        // Offline indicator
+        function updateOnlineStatus() {
+            const offlineIndicator = document.getElementById('offline-indicator');
+            
+            if (!navigator.onLine) {
+                if (!offlineIndicator) {
+                    const indicator = document.createElement('div');
+                    indicator.id = 'offline-indicator';
+                    indicator.className = 'offline-indicator';
+                    indicator.textContent = 'You are offline.';
+                    document.body.appendChild(indicator);
+                }
+            } else {
+                if (offlineIndicator) {
+                    offlineIndicator.remove();
+                }
+            }
+        }
+        
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+        updateOnlineStatus();
+        
+        // Save chat functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const saveButton = document.getElementById('save-chat');
+            const clearSavedButton = document.getElementById('clear-saved');
+            const savedChatsList = document.getElementById('saved-chats-list');
+            
+            // Load saved chats from localStorage
+            function loadSavedChats() {
+                const savedChats = JSON.parse(localStorage.getItem('savedChats') || '[]');
+                savedChatsList.innerHTML = '';
+                
+                if (savedChats.length === 0) {
+                    savedChatsList.innerHTML = '<div class="empty-state">No saved chats yet</div>';
+                    return;
+                }
+                
+                savedChats.forEach((chat, index) => {
+                    const chatItem = document.createElement('div');
+                    chatItem.className = 'saved-chat-item';
+                    chatItem.innerHTML = `
+                        <div class="saved-chat-title">${chat.title}</div>
+                        <div class="saved-chat-actions">
+                            <button class="view-chat" data-index="${index}">View</button>
+                            <button class="mention-chat" data-index="${index}">Mention</button>
+                            <button class="delete-chat" data-index="${index}">Delete</button>
+                        </div>
+                    `;
+                    savedChatsList.appendChild(chatItem);
+                });
+                
+                // Add event listeners to view, mention and delete buttons
+                document.querySelectorAll('.view-chat').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const index = e.target.getAttribute('data-index');
+                        viewSavedChat(index);
+                    });
+                });
+                
+                document.querySelectorAll('.mention-chat').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const index = e.target.getAttribute('data-index');
+                        mentionSavedChat(index);
+                    });
+                });
+                
+                document.querySelectorAll('.delete-chat').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const index = e.target.getAttribute('data-index');
+                        deleteSavedChat(index);
+                    });
+                });
+            }
+            
+            // Function to mention a saved chat in the current input
+            function mentionSavedChat(index) {
+                const savedChats = JSON.parse(localStorage.getItem('savedChats') || '[]');
+                const chat = savedChats[index];
+                
+                if (!chat) return;
+                
+                const userInput = document.getElementById('user-input');
+                const chatMessages = document.getElementById('chat-messages');
+                
+                // Create a system message showing the referenced chat content
+                const systemMessage = document.createElement('div');
+                systemMessage.className = 'message system';
+                systemMessage.innerHTML = `
+                    <div class="message-content">
+                        <strong>Referenced Chat:</strong> ${chat.title}<br><br>
+                        <div class="referenced-content">${chat.content}</div>
+                    </div>
+                `;
+                chatMessages.appendChild(systemMessage);
+                
+                // Scroll to the bottom of the chat
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                // Ask user for a prompt related to the referenced chat
+                const promptInput = prompt("Enter your prompt about this referenced chat:", "What can you tell me about this conversation?");
+                
+                if (promptInput && promptInput.trim() !== "") {
+                    // Add the user's prompt as a message
+                    const userMessageDiv = document.createElement('div');
+                    userMessageDiv.className = 'message user';
+                    userMessageDiv.innerHTML = `<div class="message-content">${promptInput}</div>`;
+                    chatMessages.appendChild(userMessageDiv);
+                    
+                    // Show typing indicator
+                    const typingIndicator = document.createElement('div');
+                    typingIndicator.className = 'message bot typing-indicator';
+                    typingIndicator.innerHTML = `
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    `;
+                    chatMessages.appendChild(typingIndicator);
+                    
+                    // Scroll to the bottom again
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    
+                    // Generate a response based on the referenced chat and the prompt
+                    setTimeout(() => {
+                        // Remove typing indicator
+                        typingIndicator.remove();
+                        
+                        // Create response message
+                        const botMessageDiv = document.createElement('div');
+                        botMessageDiv.className = 'message bot';
+                        
+                        // Generate a contextual response based on the referenced chat
+                        let responseText = generateContextualResponse(chat.content, promptInput);
+                        
+                        botMessageDiv.innerHTML = `<div class="message-content">${responseText}</div>`;
+                        chatMessages.appendChild(botMessageDiv);
+                        
+                        // Scroll to the bottom again
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }, 1500); // Simulate thinking time
+                }
+            }
+            
+            // Function to generate a contextual response based on referenced chat
+            function generateContextualResponse(chatContent, prompt) {
+                // Extract text content from HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = chatContent;
+                const textContent = tempDiv.textContent || tempDiv.innerText || "";
+                
+                // Extract user and bot messages separately for better analysis
+                const userMessages = [];
+                const botMessages = [];
+                const messageElements = tempDiv.querySelectorAll('.message');
+                
+                messageElements.forEach(msg => {
+                    if (msg.classList.contains('user')) {
+                        userMessages.push(msg.textContent.trim());
+                    } else if (msg.classList.contains('bot')) {
+                        botMessages.push(msg.textContent.trim());
+                    }
+                });
+                
+                // Identify key topics using simple keyword frequency analysis
+                const keywordFrequency = analyzeKeywords(textContent);
+                const topKeywords = Object.entries(keywordFrequency)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 5)
+                    .map(entry => entry[0]);
+                
+                // Identify conversation sentiment
+                const sentiment = analyzeSentiment(textContent);
+                
+                // Generate response based on prompt and analysis
+                if (prompt.toLowerCase().includes("summarize") || prompt.toLowerCase().includes("summary")) {
+                    return `Based on my analysis of the conversation, it appears to be a ${sentiment} discussion about ${topKeywords.join(", ")}. 
+                    The conversation includes ${userMessages.length} user messages and ${botMessages.length} bot responses. 
+                    Key points discussed include ${extractKeyPoints(textContent, topKeywords).join("; ")}.`;
+                }
+                
+                if (prompt.toLowerCase().includes("main point") || prompt.toLowerCase().includes("key point")) {
+                    return `The main points from this conversation are:
+                    ${extractKeyPoints(textContent, topKeywords).map(point => `- ${point}`).join("\n")}
+                    
+                    The overall tone of the conversation appears to be ${sentiment}.`;
+                }
+                
+                if (prompt.toLowerCase().includes("question") || prompt.toLowerCase().includes("ask")) {
+                    const questions = extractQuestions(userMessages);
+                    if (questions.length > 0) {
+                        return `In this conversation, the following questions were asked:
+                        ${questions.map(q => `- ${q}`).join("\n")}
+                        
+                        The discussion primarily focused on ${topKeywords.join(", ")}.`;
+                    } else {
+                        return `There weren't any direct questions in this conversation. The discussion was mainly about ${topKeywords.join(", ")} with a ${sentiment} tone.`;
+                    }
+                }
+                
+                if (prompt.toLowerCase().includes("analyze") || prompt.toLowerCase().includes("analysis")) {
+                    return `Analysis of the conversation:
+                    - Topics: ${topKeywords.join(", ")}
+                    - Tone: ${sentiment}
+                    - User messages: ${userMessages.length}
+                    - Bot responses: ${botMessages.length}
+                    - Key points: ${extractKeyPoints(textContent, topKeywords).join("; ")}
+                    - Questions asked: ${extractQuestions(userMessages).length > 0 ? extractQuestions(userMessages).join("; ") : "None"}`;
+                }
+                
+                // Default response
+                return `I've analyzed the referenced conversation about ${topKeywords.join(", ")}. 
+                The conversation has a ${sentiment} tone and includes ${userMessages.length} user messages and ${botMessages.length} bot responses.
+                Key points include ${extractKeyPoints(textContent, topKeywords).slice(0, 2).join("; ")}.
+                Let me know if you'd like more specific information about this conversation.`;
+            }
+            
+            // Helper function to analyze keywords frequency
+            function analyzeKeywords(text) {
+                // Common words to exclude
+                const stopWords = new Set(["the", "and", "a", "to", "of", "in", "is", "it", "you", "that", "was", "for", "on", "are", "with", "as", "I", "his", "they", "be", "at", "this", "have", "from", "or", "had", "by", "but", "not", "what", "all", "were", "we", "when", "your", "can", "said", "there", "use", "an", "each", "which", "she", "do", "how", "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", "these", "so", "some", "her", "would", "make", "like", "him", "into", "time", "has", "look", "two", "more", "go", "see", "no", "way", "could", "my", "than", "been", "call", "who", "its", "now", "find", "long", "down", "day", "did", "get", "come", "made", "may", "part"]);
+                
+                // Extract words and count frequency
+                const words = text.toLowerCase().match(/\b\w{3,}\b/g) || [];
+                const frequency = {};
+                
+                words.forEach(word => {
+                    if (!stopWords.has(word)) {
+                        frequency[word] = (frequency[word] || 0) + 1;
+                    }
+                });
+                
+                return frequency;
+            }
+            
+            // Helper function to analyze sentiment
+            function analyzeSentiment(text) {
+                const positiveWords = ["good", "great", "excellent", "amazing", "wonderful", "fantastic", "helpful", "positive", "best", "better", "success", "successful", "well", "right", "perfect", "happy", "glad", "love", "like", "enjoy", "thanks", "thank", "appreciated", "impressive", "awesome"];
+                
+                const negativeWords = ["bad", "terrible", "awful", "horrible", "poor", "worst", "worse", "negative", "difficult", "hard", "problem", "issue", "wrong", "fail", "failed", "failure", "sad", "unhappy", "hate", "dislike", "sorry", "unfortunately", "disappointing", "disappointed"];
+                
+                let positiveScore = 0;
+                let negativeScore = 0;
+                
+                const words = text.toLowerCase().match(/\b\w+\b/g) || [];
+                
+                words.forEach(word => {
+                    if (positiveWords.includes(word)) positiveScore++;
+                    if (negativeWords.includes(word)) negativeScore++;
+                });
+                
+                if (positiveScore > negativeScore * 1.5) return "positive";
+                if (negativeScore > positiveScore * 1.5) return "negative";
+                if (positiveScore > negativeScore) return "slightly positive";
+                if (negativeScore > positiveScore) return "slightly negative";
+                return "neutral";
+            }
+            
+            // Helper function to extract key points
+            function extractKeyPoints(text, keywords) {
+                const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 20);
+                const keyPoints = [];
+                
+                // Find sentences containing keywords
+                for (const keyword of keywords) {
+                    for (const sentence of sentences) {
+                        if (sentence.toLowerCase().includes(keyword) && 
+                            !keyPoints.some(point => point.includes(sentence.substring(0, 30)))) {
+                            // Trim and clean up the sentence
+                            const cleanSentence = sentence.trim().replace(/\s+/g, ' ');
+                            if (cleanSentence.length > 120) {
+                                keyPoints.push(cleanSentence.substring(0, 120) + "...");
+                            } else {
+                                keyPoints.push(cleanSentence);
+                            }
+                            
+                            if (keyPoints.length >= 5) break;
+                        }
+                    }
+                    if (keyPoints.length >= 5) break;
+                }
+                
+                return keyPoints.length > 0 ? keyPoints : ["No clear key points identified"];
+            }
+            
+            // Helper function to extract questions
+            function extractQuestions(messages) {
+                const questions = [];
+                
+                messages.forEach(message => {
+                    const questionMatches = message.match(/[^.!?]*\?/g);
+                    if (questionMatches) {
+                        questionMatches.forEach(question => {
+                            const cleanQuestion = question.trim();
+                            if (cleanQuestion.length > 10 && !questions.includes(cleanQuestion)) {
+                                questions.push(cleanQuestion);
+                            }
+                        });
+                    }
+                });
+                
+                return questions;
+            }
+            
+            // Helper function to count messages in chat content
+            function countMessages(chatContent) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = chatContent;
+                return tempDiv.querySelectorAll('.message').length;
+            }
+            
+            // Modify the send button event listener to handle mentions
+            document.getElementById('send-button').addEventListener('click', () => {
+                const userInput = document.getElementById('user-input');
+                const message = userInput.value.trim();
+                const chatMessages = document.getElementById('chat-messages');
+                
+                if (message) {
+                    // Check if the message contains mentions
+                    const mentionRegex = /\[Ref: "(.+?)"\]/g;
+                    const mentions = [...message.matchAll(mentionRegex)];
+                    
+                    if (mentions.length > 0) {
+                        let processedMessage = message;
+                        
+                        // Process each mention
+                        mentions.forEach(mention => {
+                            const mentionTitle = mention[1];
+                            const savedChats = JSON.parse(localStorage.getItem('savedChats') || '[]');
+                            
+                            // Find the chat with the matching title
+                            const matchingChat = savedChats.find(chat => 
+                                chat.title.includes(mentionTitle) || mentionTitle.includes(chat.title)
+                            );
+                            
+                            if (matchingChat) {
+                                // Add a system message showing the referenced chat with full content
+                                const systemMessage = document.createElement('div');
+                                systemMessage.className = 'message system';
+                                systemMessage.innerHTML = `
+                                    <div class="message-content">
+                                        <strong>Referenced Chat:</strong> ${matchingChat.title}<br><br>
+                                        <div class="referenced-content">${matchingChat.content}</div>
+                                    </div>
+                                `;
+                                chatMessages.appendChild(systemMessage);
+                            }
+                        });
+                    }
+                    
+                    // Continue with the normal message sending process
+                    // This assumes you have a sendMessage function in your app.js
+                    // If not, replace this with your actual message sending logic
+                    if (window.sendMessage) {
+                        window.sendMessage(message);
+                    } else {
+                        // Fallback if sendMessage is not defined
+                        const userMessageDiv = document.createElement('div');
+                        userMessageDiv.className = 'message user';
+                        userMessageDiv.innerHTML = `<div class="message-content">${message}</div>`;
+                        chatMessages.appendChild(userMessageDiv);
+                    }
+                    
+                    userInput.value = '';
+                    
+                    // Scroll to the bottom of the chat
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
+            });
+            
+            // Save current chat
+            saveButton.addEventListener('click', () => {
+                const chatMessages = document.getElementById('chat-messages');
+                if (chatMessages.children.length === 0) {
+                    alert('No messages to save');
+                    return;
+                }
+                
+                // Get the first user message as the title
+                let title = 'Saved Chat';
+                for (const child of chatMessages.children) {
+                    if (child.classList.contains('user')) {
+                        title = child.querySelector('.message-content').textContent.substring(0, 30) + '...';
+                        break;
+                    }
+                }
+                
+                // Create a chat object with HTML content
+                const chatContent = chatMessages.innerHTML;
+                const savedChats = JSON.parse(localStorage.getItem('savedChats') || '[]');
+                
+                savedChats.push({
+                    title,
+                    content: chatContent,
+                    date: new Date().toISOString()
+                });
+                
+                localStorage.setItem('savedChats', JSON.stringify(savedChats));
+                loadSavedChats();
+                
+                alert('Chat saved successfully!');
+            });
+            
+            // View saved chat
+            function viewSavedChat(index) {
+                const savedChats = JSON.parse(localStorage.getItem('savedChats') || '[]');
+                const chat = savedChats[index];
+                
+                if (!chat) return;
+                
+                // Create a modal to display the saved chat
+                const modal = document.createElement('div');
+                modal.className = 'saved-chat-modal';
+                modal.innerHTML = `
+                    <div class="saved-chat-modal-content">
+                        <div class="saved-chat-modal-header">
+                            <h3>${chat.title}</h3>
+                            <button class="close-modal">&times;</button>
+                        </div>
+                        <div class="saved-chat-modal-body">
+                            ${chat.content}
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                // Close modal when clicking the close button
+                modal.querySelector('.close-modal').addEventListener('click', () => {
+                    modal.remove();
+                });
+                
+                // Close modal when clicking outside the content
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.remove();
+                    }
+                });
+            }
+            
+            // Delete saved chat
+            function deleteSavedChat(index) {
+                if (!confirm('Are you sure you want to delete this saved chat?')) return;
+                
+                const savedChats = JSON.parse(localStorage.getItem('savedChats') || '[]');
+                savedChats.splice(index, 1);
+                localStorage.setItem('savedChats', JSON.stringify(savedChats));
+                
+                loadSavedChats();
+            }
+            
+            // Clear all saved chats
+            clearSavedButton.addEventListener('click', () => {
+                if (!confirm('Are you sure you want to clear all saved chats?')) return;
+                
+                localStorage.removeItem('savedChats');
+                loadSavedChats();
+            });
+            
+            // Load saved chats on page load
+            loadSavedChats();
+        });
+    </script>
+</body>
+</html>

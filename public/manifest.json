@@ -1,0 +1,21 @@
+{
+  "name": "MCP Chatbot with Llama3",
+  "short_name": "MCP Chat",
+  "description": "A chatbot powered by MCP and Llama3",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e9e9eb",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
